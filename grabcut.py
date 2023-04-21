@@ -5,6 +5,7 @@ from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 import igraph as ig
 
+np.random.seed(31415)
 
 GC_BGD = 0 # Hard bg pixel
 GC_FGD = 1 # Hard fg pixel, will not be used
@@ -23,7 +24,6 @@ def grabcut(img, rect, n_iter=5):
     w -= x
     h -= y
     img_float = img / 255
-    # img_float = img
 
     #Initalize the inner square to Foreground
     mask[y:y+h, x:x+w] = GC_PR_FGD
@@ -48,23 +48,31 @@ def grabcut(img, rect, n_iter=5):
 
 
 def initalize_GMMs(img, mask, n_components = 5):
+    background_pixels = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
     foreground_pixels = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
-    background_pixels = img[mask == GC_BGD].reshape(-1, 3)
 
-    kmeans_foreground = KMeans(n_clusters=n_components).fit(foreground_pixels)
     kmeans_background = KMeans(n_clusters=n_components).fit(background_pixels)
-    
-    fgGMM = GaussianMixture(n_components=n_components)
-    fgGMM.weights_ = np.ones(n_components) / n_components
-    fgGMM.means_ = kmeans_foreground.cluster_centers_
-    fgGMM.covariances_ = np.array([np.eye(3)] * n_components)
-    fgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(fgGMM.covariances_)).transpose((0, 2, 1))
+    kmeans_foreground = KMeans(n_clusters=n_components).fit(foreground_pixels)
 
     bgGMM = GaussianMixture(n_components=n_components)
     bgGMM.weights_ = np.ones(n_components) / n_components
     bgGMM.means_ = kmeans_background.cluster_centers_
     bgGMM.covariances_ = np.array([np.eye(3)] * n_components)
+    background_pixels_prediction = kmeans_background.predict(background_pixels)
+    for comp_index in range(n_components):
+        comp_pixels = background_pixels[background_pixels_prediction==comp_index]
+        bgGMM.covariances_[comp_index] = np.cov(comp_pixels.T)
     bgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(bgGMM.covariances_)).transpose((0, 2, 1))
+    
+    fgGMM = GaussianMixture(n_components=n_components)
+    fgGMM.weights_ = np.ones(n_components) / n_components
+    fgGMM.means_ = kmeans_foreground.cluster_centers_
+    fgGMM.covariances_ = np.array([np.eye(3)] * n_components)
+    foreground_pixels_prediction = kmeans_foreground.predict(foreground_pixels)
+    for comp_index in range(n_components):
+        comp_pixels = foreground_pixels[foreground_pixels_prediction==comp_index]
+        fgGMM.covariances_[comp_index] = np.cov(comp_pixels.T)
+    fgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(fgGMM.covariances_)).transpose((0, 2, 1))
 
     return bgGMM, fgGMM
 
@@ -72,17 +80,10 @@ def initalize_GMMs(img, mask, n_components = 5):
 # Define helper functions for the GrabCut algorithm
 def update_GMMs(img, mask, bgGMM, fgGMM):
     # Get foreground and background pixels from mask
-    foreground_pixels = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
     background_pixels = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
+    foreground_pixels = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
 
     n_components = fgGMM.weights_.shape[0]
-
-    # Update foreground GMMs
-    foreground_pixels_prediction = fgGMM.predict(foreground_pixels)
-    for comp_index in range(n_components):
-        comp_pixels = foreground_pixels[foreground_pixels_prediction==comp_index]
-        fgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
-        fgGMM.covariances_[comp_index] = np.cov(comp_pixels.T)
 
     # Update background GMMs
     background_pixels_prediction = bgGMM.predict(background_pixels)
@@ -90,6 +91,15 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
         comp_pixels = background_pixels[background_pixels_prediction==comp_index]
         bgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
         bgGMM.covariances_[comp_index] = np.cov(comp_pixels.T)
+    bgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(bgGMM.covariances_)).transpose((0, 2, 1))
+
+    # Update foreground GMMs
+    foreground_pixels_prediction = fgGMM.predict(foreground_pixels)
+    for comp_index in range(n_components):
+        comp_pixels = foreground_pixels[foreground_pixels_prediction==comp_index]
+        fgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
+        fgGMM.covariances_[comp_index] = np.cov(comp_pixels.T)
+    fgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(fgGMM.covariances_)).transpose((0, 2, 1))
 
     
 
@@ -101,10 +111,10 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
 
 def calc_beta(img):
     rows, cols, _ = img.shape
-    _left_diff = np.power(img[:, 1:] - img[:, :-1], 2)
-    _upleft_diff = np.power(img[1:, 1:] - img[:-1, :-1], 2)
-    _up_diff = np.power(img[1:, :] - img[:-1, :], 2)
-    _upright_diff = np.power(img[1:, :-1] - img[:-1, 1:], 2)
+    _left_diff = img[:, 1:] - img[:, :-1]
+    _upleft_diff = img[1:, 1:] - img[:-1, :-1]
+    _up_diff = img[1:, :] - img[:-1, :]
+    _upright_diff = img[1:, :-1] - img[:-1, 1:]
 
     sum_of_diffs = np.sum(np.square(_left_diff)) + np.sum(np.square(_upleft_diff)) + \
         np.sum(np.square(_up_diff)) + \
@@ -124,6 +134,7 @@ def calc_N_link_weights(pixel_ind1, pixel_ind2, pixel1_vals, pixel2_vals, beta):
 def calculate_n_links(img):
     rows, cols = img.shape[:2]
     indices = np.arange(rows * cols).reshape(rows, cols)
+    sum_weights_per_pix = np.zeros((rows, cols))
 
     beta = calc_beta(img)
 
@@ -135,33 +146,41 @@ def calculate_n_links(img):
             if x < cols - 1:
                 # Right
                 weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y, x+1)), img[y, x], img[y, x+1], beta)
+                sum_weights_per_pix[y, x] += weight
+                sum_weights_per_pix[y, x+1] += weight
                 n_links.append((indices[y, x], indices[y, x+1]))
                 n_links_weights.append(weight)
 
             if y < rows - 1:
                 # Bottom
                 weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y+1, x)), img[y, x], img[y+1, x], beta)
+                sum_weights_per_pix[y, x] += weight
+                sum_weights_per_pix[y+1, x] += weight
                 n_links.append((indices[y, x], indices[y+1, x]))
                 n_links_weights.append(weight)
 
             if x < cols - 1 and y < rows - 1:
                 # Bottom-right
                 weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y+1, x+1)), img[y, x], img[y+1, x+1], beta)
+                sum_weights_per_pix[y, x] += weight
+                sum_weights_per_pix[y+1, x+1] += weight
                 n_links.append((indices[y, x], indices[y+1, x+1]))
                 n_links_weights.append(weight)
 
             if x < cols - 1 and y > 0:
                 # Top-right
                 weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y-1, x+1)), img[y, x], img[y-1, x+1], beta)
+                sum_weights_per_pix[y, x] += weight
+                sum_weights_per_pix[y-1, x+1] += weight
                 n_links.append((indices[y, x], indices[y-1, x+1]))
                 n_links_weights.append(weight)
             
-            if (max_weight < weight):
-                max_weight = weight
 
+    max_weight = np.max(sum_weights_per_pix)
+    print("K:", max_weight)
     return n_links, n_links_weights, max_weight
 
-def calc_D(pixel, gmm):
+def calc_D2(pixel, gmm):
     log_prob = 0
     for i in range(gmm.n_components):
         coef = gmm.weights_[i]
@@ -178,23 +197,38 @@ def calc_D(pixel, gmm):
     log_prob = -1 * np.log(log_prob)
     return log_prob
 
+def calc_D(pixel, gmm):
+    k = gmm.predict(pixel.reshape(-1, 3)).item()
+    coef = gmm.weights_[k]
+    mean = gmm.means_[k]
+    covar = gmm.covariances_[k]
+    diff = pixel - mean
+    covarDet = np.linalg.det(covar)
+
+    d = 0
+    d -= np.log(coef)
+    d += 0.5 * np.log(covarDet)
+    d += 0.5 * (diff.T @ np.linalg.inv(covar) @ diff)
+
+    return d
+
 def calc_T_link_weights(pixel_ind, pixel_val, mask, bg_weights, fg_weights, K, bgGMM, fgGMM):
     bg_weight = 0
     fg_weight = 0
 
-    if (mask[tuple(pixel_ind)] == GC_FGD):
-        bg_weight = 0
-        fg_weight = K
-    elif (mask[tuple(pixel_ind)] == GC_BGD): 
+    if (mask[tuple(pixel_ind)] == GC_BGD): 
         bg_weight = K
         fg_weight = 0
+    elif (mask[tuple(pixel_ind)] == GC_FGD):
+        bg_weight = 0
+        fg_weight = K
     else: # Unknown
         bg_weight = (-1) * bg_weights[tuple(pixel_ind)]
         # print(f'bg_weight={bg_weight}')
         fg_weight = (-1) * fg_weights[tuple(pixel_ind)] # TODO: check if - needed
         # print(f'fg_weight={fg_weight}')
-        # bg_weight = calc_D(pixel_val, bgGMM)
-        # fg_weight = calc_D(pixel_val, fgGMM)
+        # bg_weight = (-1) * calc_D(pixel_val, fgGMM)
+        # fg_weight = (-1) * calc_D(pixel_val, bgGMM)
     
     return bg_weight, fg_weight
 
@@ -216,6 +250,8 @@ def calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K):
             t_links.append((i, fg_node))
             t_links_weights.append(fg_weight)
 
+    # min_weight = min(t_links_weights)
+    # t_links_weights = [w + min_weight for w in t_links_weights]
     return t_links, t_links_weights
 
 def build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node):
@@ -231,8 +267,8 @@ def build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node):
 
 def calculate_mincut(img, mask, bgGMM, fgGMM):
     # Build graph
-    fg_node = img.shape[0] * img.shape[1]
-    bg_node = fg_node + 1
+    bg_node = img.shape[0] * img.shape[1]
+    fg_node = bg_node + 1
     graph = build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node)
     
     # Find the minimum cut
@@ -242,7 +278,7 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     # Get the min_cut
     min_cut = cut.partition
     for i in range(len(min_cut)):
-        min_cut[i] = [(node//img.shape[1], node % img.shape[1]) for node in min_cut[i] if node<fg_node]
+        min_cut[i] = [(node//img.shape[1], node % img.shape[1]) for node in min_cut[i] if node<bg_node]
 
     # Get the energy term corresponding to the cut
     energy = cut.value
