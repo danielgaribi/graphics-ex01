@@ -223,9 +223,13 @@ def calc_T_link_weights(pixel_ind, pixel_val, mask, bg_weights, fg_weights, K, b
         bg_weight = 0
         fg_weight = K
     else: # Unknown
-        bg_weight = (-1) * bg_weights[tuple(pixel_ind)]
+        # TODO: reverse!
+        ##############################################
+        # bg_weight = (-1) * fg_weights[tuple(pixel_ind)]
+        bg_weight = fg_weights[tuple(pixel_ind)]
         # print(f'bg_weight={bg_weight}')
-        fg_weight = (-1) * fg_weights[tuple(pixel_ind)] # TODO: check if - needed
+        # fg_weight = (-1) * bg_weights[tuple(pixel_ind)] # TODO: check if - needed
+        fg_weight = bg_weights[tuple(pixel_ind)] # TODO: check if - needed
         # print(f'fg_weight={fg_weight}')
         # bg_weight = (-1) * calc_D(pixel_val, fgGMM)
         # fg_weight = (-1) * calc_D(pixel_val, bgGMM)
@@ -273,7 +277,8 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     
     # Find the minimum cut
     # maxflow  = graph.maxflow(fg_node, bg_node)
-    cut = graph.st_mincut(bg_node, fg_node, capacity='weight')
+    # cut = graph.st_mincut(bg_node, fg_node, capacity='weight')
+    cut = ig.Graph.st_mincut(graph, bg_node, fg_node, capacity='weight')
 
     # Get the min_cut
     min_cut = cut.partition
@@ -312,16 +317,48 @@ def update_mask(mincut_sets, mask):
     return mask
 
 
+# def check_convergence(energy):
+#     # TODO: implement convergence check
+#    convergence = False
+#    return convergence
+
+# Define a global variable to store the previous energy value
+prev_energy = None
+
 def check_convergence(energy):
-    # TODO: implement convergence check
+    global prev_energy 
+    threshold = 1e-6
     convergence = False
+
+    # If prev_energy is None, set it to the current energy and return False
+    if prev_energy is None:
+        prev_energy = energy
+        return False
+
+    delta = abs(energy - prev_energy)
+    if (delta < threshold):
+        prev_energy = energy
+        convergence = True
+    else:
+        prev_energy = energy
+    
     return convergence
 
-
 def cal_metric(predicted_mask, gt_mask):
-    # TODO: implement metric calculation
+    # Convert the masks to boolean arrays for element-wise operations
+    predicted_mask = predicted_mask.astype(bool)
+    gt_mask = gt_mask.astype(bool)
 
-    return 100, 100
+    # Calculate accuracy
+    accuracy = (predicted_mask == gt_mask).mean() * 100
+
+    # Calculate intersection, union, and Jaccard similarity
+    intersection = (predicted_mask & gt_mask).sum()
+    union = (predicted_mask | gt_mask).sum()
+    jaccard_similarity = (intersection / union) * 100
+
+    return accuracy, jaccard_similarity
+
 
 def parse():
     parser = argparse.ArgumentParser()
