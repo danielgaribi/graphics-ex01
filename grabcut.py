@@ -226,10 +226,10 @@ def calc_T_link_weights(pixel_ind, pixel_val, mask, bg_weights, fg_weights, K, b
         # TODO: reverse!
         ##############################################
         # bg_weight = (-1) * fg_weights[tuple(pixel_ind)]
-        bg_weight = fg_weights[tuple(pixel_ind)]
+        bg_weight = (-1) * bg_weights[tuple(pixel_ind)]
         # print(f'bg_weight={bg_weight}')
         # fg_weight = (-1) * bg_weights[tuple(pixel_ind)] # TODO: check if - needed
-        fg_weight = bg_weights[tuple(pixel_ind)] # TODO: check if - needed
+        fg_weight = (-1) * fg_weights[tuple(pixel_ind)] # TODO: check if - needed
         # print(f'fg_weight={fg_weight}')
         # bg_weight = (-1) * calc_D(pixel_val, fgGMM)
         # fg_weight = (-1) * calc_D(pixel_val, bgGMM)
