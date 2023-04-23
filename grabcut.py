@@ -12,6 +12,7 @@ GC_FGD = 1 # Hard fg pixel, will not be used
 GC_PR_BGD = 2 # Soft bg pixel
 GC_PR_FGD = 3 # Soft fg pixel
 
+epsilon = 0.000001
 
 # Define the GrabCut algorithm function
 def grabcut(img, rect, n_iter=5):
@@ -23,7 +24,7 @@ def grabcut(img, rect, n_iter=5):
     # Convert to absolute cordinates
     w -= x
     h -= y
-    img_float = img / 255
+    img_float = img.astype(np.float64)
 
     #Initalize the inner square to Foreground
     mask[y:y+h, x:x+w] = GC_PR_FGD
@@ -57,7 +58,7 @@ def initalize_GMMs(img, mask, n_components = 5):
     bgGMM = GaussianMixture(n_components=n_components)
     bgGMM.weights_ = np.ones(n_components) / n_components
     bgGMM.means_ = kmeans_background.cluster_centers_
-    bgGMM.covariances_ = np.array([np.eye(3)] * n_components)
+    bgGMM.covariances_ = np.array([np.eye(3) * (1 + epsilon) ] * n_components)
     background_pixels_prediction = kmeans_background.predict(background_pixels)
     for comp_index in range(n_components):
         comp_pixels = background_pixels[background_pixels_prediction==comp_index]
@@ -67,7 +68,7 @@ def initalize_GMMs(img, mask, n_components = 5):
     fgGMM = GaussianMixture(n_components=n_components)
     fgGMM.weights_ = np.ones(n_components) / n_components
     fgGMM.means_ = kmeans_foreground.cluster_centers_
-    fgGMM.covariances_ = np.array([np.eye(3)] * n_components)
+    fgGMM.covariances_ = np.array([np.eye(3) * (1 + epsilon)] * n_components)
     foreground_pixels_prediction = kmeans_foreground.predict(foreground_pixels)
     for comp_index in range(n_components):
         comp_pixels = foreground_pixels[foreground_pixels_prediction==comp_index]
@@ -90,7 +91,9 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     for comp_index in range(n_components):
         comp_pixels = background_pixels[background_pixels_prediction==comp_index]
         bgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
-        bgGMM.covariances_[comp_index] = np.cov(comp_pixels.T)
+        bgGMM.covariances_[comp_index] = np.cov(comp_pixels.T) + np.eye(3) * (epsilon)
+        bgGMM.weights_[comp_index] = comp_pixels.shape[0] / background_pixels.shape[0]
+
     bgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(bgGMM.covariances_)).transpose((0, 2, 1))
 
     # Update foreground GMMs
@@ -98,10 +101,10 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     for comp_index in range(n_components):
         comp_pixels = foreground_pixels[foreground_pixels_prediction==comp_index]
         fgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
-        fgGMM.covariances_[comp_index] = np.cov(comp_pixels.T)
-    fgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(fgGMM.covariances_)).transpose((0, 2, 1))
+        fgGMM.covariances_[comp_index] = np.cov(comp_pixels.T) + np.eye(3) * (epsilon)
+        fgGMM.weights_[comp_index] = comp_pixels.shape[0] / foreground_pixels.shape[0]
 
-    
+    fgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(fgGMM.covariances_)).transpose((0, 2, 1))
 
     # # Update foreground and background GMMs
     # fgGMM.fit(foreground_pixels)
@@ -129,13 +132,14 @@ def calc_N_link_weights(pixel_ind1, pixel_ind2, pixel1_vals, pixel2_vals, beta):
     dist = np.linalg.norm(pixel_ind1 - pixel_ind2)
     norm = np.power(np.linalg.norm(pixel1_vals - pixel2_vals), 2)
     return (50 * np.exp(-beta * norm)) / dist
-    # return 0
+    
 
 def calculate_n_links(img):
     rows, cols = img.shape[:2]
     indices = np.arange(rows * cols).reshape(rows, cols)
     sum_weights_per_pix = np.zeros((rows, cols))
 
+    # TODO: debug
     beta = calc_beta(img)
 
     n_links = []
@@ -217,22 +221,18 @@ def calc_T_link_weights(pixel_ind, pixel_val, mask, bg_weights, fg_weights, K, b
     fg_weight = 0
 
     if (mask[tuple(pixel_ind)] == GC_BGD): 
-        bg_weight = K
+        # bg_weight = K
+        bg_weight = np.inf
         fg_weight = 0
     elif (mask[tuple(pixel_ind)] == GC_FGD):
         bg_weight = 0
-        fg_weight = K
+        # fg_weight = K
+        fg_weight = np.inf
     else: # Unknown
-        # TODO: reverse!
-        ##############################################
         # bg_weight = (-1) * fg_weights[tuple(pixel_ind)]
-        bg_weight = (-1) * bg_weights[tuple(pixel_ind)]
-        # print(f'bg_weight={bg_weight}')
-        # fg_weight = (-1) * bg_weights[tuple(pixel_ind)] # TODO: check if - needed
-        fg_weight = (-1) * fg_weights[tuple(pixel_ind)] # TODO: check if - needed
-        # print(f'fg_weight={fg_weight}')
-        # bg_weight = (-1) * calc_D(pixel_val, fgGMM)
-        # fg_weight = (-1) * calc_D(pixel_val, bgGMM)
+        # fg_weight = (-1) * bg_weights[tuple(pixel_ind)]
+        bg_weight = (-1) * calc_D2(pixel_val, fgGMM)
+        fg_weight = (-1) * calc_D2(pixel_val, bgGMM)
     
     return bg_weight, fg_weight
 
