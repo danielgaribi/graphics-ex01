@@ -5,8 +5,6 @@ from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 import igraph as ig
 
-np.random.seed(31415)
-
 GC_BGD = 0 # Hard bg pixel
 GC_FGD = 1 # Hard fg pixel, will not be used
 GC_PR_BGD = 2 # Soft bg pixel
@@ -17,6 +15,7 @@ epsilon = 0.000001
 n_links = None
 n_links_weights = None
 K = None
+prev_energy = None
 
 # Define the GrabCut algorithm function
 def grabcut(img, rect, n_iter=5):
@@ -50,6 +49,7 @@ def grabcut(img, rect, n_iter=5):
         plt.imshow(mask)
         plt.colorbar()
         plt.savefig(f'{i}.jpg')
+        print(f'Iteration {i} energy: {energy}')
 
         if check_convergence(energy):
             break
@@ -116,10 +116,6 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
 
     fgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(fgGMM.covariances_)).transpose((0, 2, 1))
 
-    # # Update foreground and background GMMs
-    # fgGMM.fit(foreground_pixels)
-    # bgGMM.fit(background_pixels)
-
     return bgGMM, fgGMM
 
 def calc_beta(img):
@@ -138,18 +134,15 @@ def calc_beta(img):
     return beta
     
 def calc_N_link_weights(pixel_ind1, pixel_ind2, pixel1_vals, pixel2_vals, beta):
-    # beta = 1 / (2 * np.mean(np.power(pixel1_vals - pixel2_vals, 2)))
     dist = np.linalg.norm(pixel_ind1 - pixel_ind2)
     norm = np.power(np.linalg.norm(pixel1_vals - pixel2_vals), 2)
-    return (50 * np.exp(-beta * norm)) / dist
+    return (50 * np.exp(-beta * norm)) / dist # TODO: Check if this is correct
     
-
 def calculate_n_links(img):
     rows, cols = img.shape[:2]
     indices = np.arange(rows * cols).reshape(rows, cols)
     sum_weights_per_pix = np.zeros((rows, cols))
 
-    # TODO: debug
     beta = calc_beta(img)
 
     n_links = []
@@ -194,58 +187,6 @@ def calculate_n_links(img):
     print("K:", max_weight)
     return n_links, n_links_weights, max_weight
 
-def calc_D2(pixel, gmm):
-    log_prob = 0
-    for i in range(gmm.n_components):
-        coef = gmm.weights_[i]
-        mean = gmm.means_[i]
-        covar = gmm.covariances_[i]
-        diff = pixel - mean
-        covarDet = np.linalg.det(covar)
-
-        exponent = 0.5 * (diff.T @ np.linalg.inv(covar) @ diff)
-        log_prob += ( coef / np.sqrt(covarDet) ) * np.exp(exponent)
-
-        # TODO: what if the mat doesn't have inverse? (forum)
-    
-    log_prob = -1 * np.log(log_prob)
-    return log_prob
-
-def calc_D(pixel, gmm):
-    k = gmm.predict(pixel.reshape(-1, 3)).item()
-    coef = gmm.weights_[k]
-    mean = gmm.means_[k]
-    covar = gmm.covariances_[k]
-    diff = pixel - mean
-    covarDet = np.linalg.det(covar)
-
-    d = 0
-    d -= np.log(coef)
-    d += 0.5 * np.log(covarDet)
-    d += 0.5 * (diff.T @ np.linalg.inv(covar) @ diff)
-
-    return d
-
-def calc_T_link_weights(pixel_ind, pixel_val, mask, bg_weights, fg_weights, K, bgGMM, fgGMM):
-    bg_weight = 0
-    fg_weight = 0
-
-    if (mask[tuple(pixel_ind)] == GC_BGD): 
-        # bg_weight = K
-        bg_weight = np.inf
-        fg_weight = 0
-    elif (mask[tuple(pixel_ind)] == GC_FGD):
-        bg_weight = 0
-        # fg_weight = K
-        fg_weight = np.inf
-    else: # Unknown
-        # bg_weight = (-1) * fg_weights[tuple(pixel_ind)]
-        # fg_weight = (-1) * bg_weights[tuple(pixel_ind)]
-        bg_weight = (-1) * calc_D2(pixel_val, fgGMM)
-        fg_weight = (-1) * calc_D2(pixel_val, bgGMM)
-    
-    return bg_weight, fg_weight
-
 def calc_D_for_image(pixels, gmm):
     log_prob = np.zeros((pixels.shape[0], 1))
     for i in range(gmm.n_components):
@@ -260,8 +201,6 @@ def calc_D_for_image(pixels, gmm):
         exponent = -0.5 * np.einsum("b k j, b j i -> b k i", diff.transpose(0, 2, 1), mul_cov_diff)
         exponent = exponent.reshape(-1, 1)
         log_prob += ( coef / np.sqrt(covarDet) ) * np.exp(exponent)
-
-        # TODO: what if the mat doesn't have inverse? (forum)
     
     log_prob = -1 * np.log(log_prob)
     return log_prob
@@ -270,8 +209,6 @@ def calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K):
     rows, cols = img.shape[:2]
     indices = np.arange(rows * cols).reshape(rows, cols)
 
-    # bg_weights = bgGMM.score_samples(img.reshape(-1, 3)).reshape(img.shape[:-1])
-    # fg_weights = fgGMM.score_samples(img.reshape(-1, 3)).reshape(img.shape[:-1])
     bg_weights = calc_D_for_image(img.reshape(-1, 3), fgGMM).reshape(img.shape[:-1])
     fg_weights = calc_D_for_image(img.reshape(-1, 3), bgGMM).reshape(img.shape[:-1])
 
@@ -286,16 +223,11 @@ def calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K):
     for y in range(rows):
         for x in range(cols):
             i = indices[y, x]
-            # bg_weight, fg_weight = calc_T_link_weights(np.asarray((y,x)), img[y,x], mask, bg_weights, fg_weights, K, bgGMM, fgGMM)
             t_links.append((i, bg_node))
             t_links_weights.append(bg_weights[(y,x)])
-            # t_links_weights.append(bg_weight)
             t_links.append((i, fg_node))
             t_links_weights.append(fg_weights[(y,x)])
-            # t_links_weights.append(fg_weight)
 
-    # min_weight = min(t_links_weights)
-    # t_links_weights = [w + min_weight for w in t_links_weights]
     return t_links, t_links_weights
 
 def build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node):
@@ -308,7 +240,6 @@ def build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node):
         n_links, n_links_weights, K = calculate_n_links(img)
     t_links, t_links_weights = calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K)
     graph.add_edges(n_links + t_links, attributes={'weight': n_links_weights + t_links_weights})
-    # graph.es['weight'] = n_links_weights + t_links_weights
     return graph
 
 def calculate_mincut(img, mask, bgGMM, fgGMM):
@@ -318,8 +249,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     graph = build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node)
     
     # Find the minimum cut
-    # maxflow  = graph.maxflow(fg_node, bg_node)
-    # cut = graph.st_mincut(bg_node, fg_node, capacity='weight')
     cut = ig.Graph.st_mincut(graph, bg_node, fg_node, capacity='weight')
 
     # Get the min_cut
@@ -331,14 +260,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     energy = cut.value
     
     return min_cut, energy
-
-
-# def calculate_mincut(img, mask, bgGMM, fgGMM):
-#     # TODO: implement energy (cost) calculation step and mincut
-#     min_cut = [[], []]
-#     energy = 0
-#     return min_cut, energy
-
 
 def update_mask(mincut_sets, mask):
     # width, height = np.shape(mask)
@@ -352,25 +273,11 @@ def update_mask(mincut_sets, mask):
     for fg_pixel_ind in foreground_pixels:
         if mask[fg_pixel_ind] != GC_BGD and mask[fg_pixel_ind] != GC_FGD:
             mask[fg_pixel_ind] = GC_PR_FGD
-
-    # for i in range(width):
-    #     for j in range(height):
-    #         mask[i][j] = (if <pixel> in foreground_pixels) ? GC_PR_FGD : GC_PR_BGD 
     return mask
-
-
-# def check_convergence(energy):
-#     # TODO: implement convergence check
-#    convergence = False
-#    return convergence
-
-# Define a global variable to store the previous energy value
-prev_energy = None
 
 def check_convergence(energy):
     global prev_energy 
-    threshold = 1e-6
-    convergence = False
+    threshold = 2500
 
     # If prev_energy is None, set it to the current energy and return False
     if prev_energy is None:
@@ -378,13 +285,11 @@ def check_convergence(energy):
         return False
 
     delta = abs(energy - prev_energy)
-    if (delta < threshold):
-        prev_energy = energy
-        convergence = True
-    else:
-        prev_energy = energy
+    if (energy > prev_energy or delta < threshold):
+        return True
     
-    return convergence
+    prev_energy = energy
+    return False
 
 def cal_metric(predicted_mask, gt_mask):
     # Convert the masks to boolean arrays for element-wise operations
