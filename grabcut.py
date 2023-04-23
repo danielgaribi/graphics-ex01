@@ -14,6 +14,10 @@ GC_PR_FGD = 3 # Soft fg pixel
 
 epsilon = 0.000001
 
+n_links = None
+n_links_weights = None
+K = None
+
 # Define the GrabCut algorithm function
 def grabcut(img, rect, n_iter=5):
     # Assign initial labels to the pixels based on the bounding box
@@ -41,6 +45,12 @@ def grabcut(img, rect, n_iter=5):
 
         mask = update_mask(mincut_sets, mask)
 
+        import matplotlib.pyplot as plt
+        plt.figure()
+        plt.imshow(mask)
+        plt.colorbar()
+        plt.savefig(f'{i}.jpg')
+
         if check_convergence(energy):
             break
 
@@ -52,8 +62,8 @@ def initalize_GMMs(img, mask, n_components = 5):
     background_pixels = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
     foreground_pixels = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
 
-    kmeans_background = KMeans(n_clusters=n_components).fit(background_pixels)
-    kmeans_foreground = KMeans(n_clusters=n_components).fit(foreground_pixels)
+    kmeans_background = KMeans(n_clusters=n_components, n_init=10).fit(background_pixels)
+    kmeans_foreground = KMeans(n_clusters=n_components, n_init=10).fit(foreground_pixels)
 
     bgGMM = GaussianMixture(n_components=n_components)
     bgGMM.weights_ = np.ones(n_components) / n_components
@@ -236,34 +246,66 @@ def calc_T_link_weights(pixel_ind, pixel_val, mask, bg_weights, fg_weights, K, b
     
     return bg_weight, fg_weight
 
+def calc_D_for_image(pixels, gmm):
+    log_prob = np.zeros((pixels.shape[0], 1))
+    for i in range(gmm.n_components):
+        coef = gmm.weights_[i]
+        mean = gmm.means_[i]
+        covar = gmm.covariances_[i]
+        diff = pixels - mean
+        diff = diff.reshape(-1, 3, 1)
+        covarDet = np.linalg.det(covar)
+
+        mul_cov_diff = np.einsum("i j, b j k -> b i k", np.linalg.inv(covar) , diff)
+        exponent = -0.5 * np.einsum("b k j, b j i -> b k i", diff.transpose(0, 2, 1), mul_cov_diff)
+        exponent = exponent.reshape(-1, 1)
+        log_prob += ( coef / np.sqrt(covarDet) ) * np.exp(exponent)
+
+        # TODO: what if the mat doesn't have inverse? (forum)
+    
+    log_prob = -1 * np.log(log_prob)
+    return log_prob
+
 def calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K):
     rows, cols = img.shape[:2]
     indices = np.arange(rows * cols).reshape(rows, cols)
 
-    bg_weights = bgGMM.score_samples(img.reshape(-1, 3)).reshape(img.shape[:-1])
-    fg_weights = fgGMM.score_samples(img.reshape(-1, 3)).reshape(img.shape[:-1])
+    # bg_weights = bgGMM.score_samples(img.reshape(-1, 3)).reshape(img.shape[:-1])
+    # fg_weights = fgGMM.score_samples(img.reshape(-1, 3)).reshape(img.shape[:-1])
+    bg_weights = calc_D_for_image(img.reshape(-1, 3), fgGMM).reshape(img.shape[:-1])
+    fg_weights = calc_D_for_image(img.reshape(-1, 3), bgGMM).reshape(img.shape[:-1])
+
+    bg_weights[mask == GC_BGD] = np.inf
+    bg_weights[mask == GC_FGD] = 0
+
+    fg_weights[mask == GC_BGD] = 0
+    fg_weights[mask == GC_FGD] = np.inf
 
     t_links = []
     t_links_weights = []
     for y in range(rows):
         for x in range(cols):
             i = indices[y, x]
-            bg_weight, fg_weight = calc_T_link_weights(np.asarray((y,x)), img[y,x], mask, bg_weights, fg_weights, K, bgGMM, fgGMM)
+            # bg_weight, fg_weight = calc_T_link_weights(np.asarray((y,x)), img[y,x], mask, bg_weights, fg_weights, K, bgGMM, fgGMM)
             t_links.append((i, bg_node))
-            t_links_weights.append(bg_weight)
+            t_links_weights.append(bg_weights[(y,x)])
+            # t_links_weights.append(bg_weight)
             t_links.append((i, fg_node))
-            t_links_weights.append(fg_weight)
+            t_links_weights.append(fg_weights[(y,x)])
+            # t_links_weights.append(fg_weight)
 
     # min_weight = min(t_links_weights)
     # t_links_weights = [w + min_weight for w in t_links_weights]
     return t_links, t_links_weights
 
 def build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node):
+    global n_links, n_links_weights, K
     rows, cols = img.shape[:2]
     graph = ig.Graph()
     graph.add_vertices(rows * cols + 2)  # 2 extra vertices for source and sink
 
-    n_links, n_links_weights, K = calculate_n_links(img)
+    if n_links is None or n_links_weights is None or K is None:
+        n_links, n_links_weights, K = calculate_n_links(img)
     t_links, t_links_weights = calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K)
     graph.add_edges(n_links + t_links, attributes={'weight': n_links_weights + t_links_weights})
     # graph.es['weight'] = n_links_weights + t_links_weights
