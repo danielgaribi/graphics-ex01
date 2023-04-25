@@ -44,18 +44,18 @@ def grabcut(img, rect, n_iter=5):
 
         mask = update_mask(mincut_sets, mask)
 
-        import matplotlib.pyplot as plt
-        plt.figure()
-        plt.imshow(mask)
-        plt.colorbar()
-        plt.savefig(f'{i}.jpg')
-        print(f'Iteration {i} energy: {energy}')
-
         if check_convergence(energy):
             break
 
+    mask = finalize_mask(mask)
+
     # Return the final mask and the GMMs
     return mask, bgGMM, fgGMM
+
+def finalize_mask(mask):
+    mask[mask == GC_PR_BGD] = GC_BGD
+    mask[mask == GC_PR_FGD] = GC_FGD
+    return mask
 
 
 def initalize_GMMs(img, mask, n_components = 5):
@@ -130,7 +130,6 @@ def calc_beta(img):
         np.sum(np.square(_upright_diff))
     exp_of_diffs = sum_of_diffs / (4*cols*rows - 3*rows - 3*cols + 2 )
     beta = 1 / (2 * exp_of_diffs)  # The first and last pixels in the 1st row are removed twice
-    print('Beta:', beta)
     return beta
     
 def calc_N_link_weights(pixel_ind1, pixel_ind2, pixel1_vals, pixel2_vals, beta):
@@ -181,10 +180,8 @@ def calculate_n_links(img):
                 sum_weights_per_pix[y-1, x+1] += weight
                 n_links.append((indices[y, x], indices[y-1, x+1]))
                 n_links_weights.append(weight)
-            
 
     max_weight = np.max(sum_weights_per_pix)
-    print("K:", max_weight)
     return n_links, n_links_weights, max_weight
 
 def calc_D_for_image(pixels, gmm):
@@ -212,11 +209,11 @@ def calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K):
     bg_weights = calc_D_for_image(img.reshape(-1, 3), fgGMM).reshape(img.shape[:-1])
     fg_weights = calc_D_for_image(img.reshape(-1, 3), bgGMM).reshape(img.shape[:-1])
 
-    bg_weights[mask == GC_BGD] = np.inf
+    bg_weights[mask == GC_BGD] = K
     bg_weights[mask == GC_FGD] = 0
 
     fg_weights[mask == GC_BGD] = 0
-    fg_weights[mask == GC_FGD] = np.inf
+    fg_weights[mask == GC_FGD] = K
 
     t_links = []
     t_links_weights = []
@@ -347,6 +344,11 @@ if __name__ == '__main__':
 
     # Apply the final mask to the input image and display the results
     img_cut = img * (mask[:, :, np.newaxis])
+    # TODO: remove before submition:
+    cv2.imwrite('Original_Image.jpg', img)
+    cv2.imwrite('GrabCut_Mask.jpg', 255 * mask)
+    cv2.imwrite('GrabCut_Result.jpg', img_cut)
+    # end of TODO
     cv2.imshow('Original Image', img)
     cv2.imshow('GrabCut Mask', 255 * mask)
     cv2.imshow('GrabCut Result', img_cut)
