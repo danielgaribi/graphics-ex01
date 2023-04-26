@@ -34,7 +34,7 @@ def crop_src_image(im_src, mask):
 def get_src_and_tgt_ranges(center, src_shape, tgt_shape):
     h_src, w_src, _ = src_shape
     h_tgt, w_tgt, _ = tgt_shape
-    c_y, c_x = (center[0], center[1])
+    c_x, c_y= (center[0], center[1])
 
     tgt_min_y = c_y-h_src//2
     tgt_max_y = c_y+h_src//2 if h_src % 2 == 0 else c_y+h_src//2 + 1
@@ -56,16 +56,6 @@ def get_src_and_tgt_ranges(center, src_shape, tgt_shape):
         "src_min_x": src_min_x,
         "src_max_x": src_max_x
     }
-
-def create_target_mask(src_mask, center, level, tgt_shape):
-    ranges = get_src_and_tgt_ranges(center, level, src_mask.shape, tgt_shape)
-
-    mask_tgt = np.zeros(tgt_shape)
-    mask_tgt[ranges.tgt_min_y:ranges.tgt_max_y, ranges.tgt_min_x:ranges.tgt_max_x] = src_mask[ranges.src_min_y:ranges.src_max_y, ranges.src_min_x:ranges.src_max_x]
-
-    k = np.ones((3,3),dtype=int) # for 4-connected
-    mask_border = binary_dilation(mask_tgt, k)
-    return mask_tgt, mask_border
 
 def get_border_mask(mask):
     k = np.ones((3,3),dtype=int) # for 4-connected
