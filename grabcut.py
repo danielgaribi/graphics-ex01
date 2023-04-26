@@ -4,6 +4,7 @@ import argparse
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 import igraph as ig
+import datetime
 
 GC_BGD = 0 # Hard bg pixel
 GC_FGD = 1 # Hard fg pixel, will not be used
@@ -18,7 +19,7 @@ K = None
 prev_energy = None
 
 # Define the GrabCut algorithm function
-def grabcut(img, rect, n_iter=5):
+def grabcut(img, rect, n_iter=5, n_comp=5, k_blur=1):
     # Assign initial labels to the pixels based on the bounding box
     mask = np.zeros(img.shape[:2], dtype=np.uint8)
     mask.fill(GC_BGD)
@@ -27,13 +28,14 @@ def grabcut(img, rect, n_iter=5):
     # Convert to absolute cordinates
     w -= x
     h -= y
+    img = cv2.blur(img, (k_blur, k_blur))
     img_float = img.astype(np.float64)
 
     #Initalize the inner square to Foreground
     mask[y:y+h, x:x+w] = GC_PR_FGD
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
 
-    bgGMM, fgGMM = initalize_GMMs(img_float, mask)
+    bgGMM, fgGMM = initalize_GMMs(img_float, mask, n_components=n_comp)
 
     num_iters = 1000
     for i in range(num_iters):
@@ -311,6 +313,9 @@ def parse():
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
     parser.add_argument('--rect', type=str, default='1,1,100,100', help='if you wish change the rect (x,y,w,h')
+    parser.add_argument('--out_path', type=str, default='outputs', help='')
+    parser.add_argument('--k_blur', type=int, default='1', help='')
+    parser.add_argument('--n_comp', type=int, default='5', help='')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -332,8 +337,10 @@ if __name__ == '__main__':
     img = cv2.imread(input_path)
 
     # Run the GrabCut algorithm on the image and bounding box
-    mask, bgGMM, fgGMM = grabcut(img, rect)
+    start_time = datetime.datetime.now()
+    mask, bgGMM, fgGMM = grabcut(img, rect, k_blur=args.k_blur, n_comp=args.n_comp)
     mask = cv2.threshold(mask, 0, 1, cv2.THRESH_BINARY)[1]
+    endtime = datetime.datetime.now()
 
     # Print metrics only if requested (valid only for course files)
     if args.eval:
@@ -345,9 +352,19 @@ if __name__ == '__main__':
     # Apply the final mask to the input image and display the results
     img_cut = img * (mask[:, :, np.newaxis])
     # TODO: remove before submition:
-    cv2.imwrite('Original_Image.jpg', img)
-    cv2.imwrite('GrabCut_Mask.jpg', 255 * mask)
-    cv2.imwrite('GrabCut_Result.jpg', img_cut)
+    cv2.imwrite(f'{args.out_path}/{args.input_name}/image.jpg', img)
+    cv2.imwrite(f'{args.out_path}/{args.input_name}/mask.jpg', 255 * mask)
+    cv2.imwrite(f'{args.out_path}/{args.input_name}/result.jpg', img_cut)
+    if args.eval:
+        with open(f'{args.out_path}/{args.input_name}/metrics.txt', 'w') as f:
+            run_time = endtime - start_time
+            f.write(f"input_name: {args.input_name}.jpg \n")
+            f.write(f'Accuracy={acc}, Jaccard={jac} \n')
+            f.write(f"rect: {rect} \n")
+            f.write(f"blur: {args.k_blur} \n")
+            f.write(f"n_copm: {args.n_comp} \n")
+            f.write(f"run_time: {run_time} \n")
+
     # end of TODO
     cv2.imshow('Original Image', img)
     cv2.imshow('GrabCut Mask', 255 * mask)
