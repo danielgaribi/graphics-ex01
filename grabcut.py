@@ -35,36 +35,17 @@ def grabcut(img, rect, n_iter=5, n_comp=5, k_blur=1):
     mask[y:y+h, x:x+w] = GC_PR_FGD
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
 
-    initalize_GMMs_start_time = datetime.datetime.now()
     bgGMM, fgGMM = initalize_GMMs(img_float, mask, n_components=n_comp)
-    initalize_GMMs_end_time = datetime.datetime.now()
-    print(f"initalize_GMMs run time: \t\t{initalize_GMMs_end_time - initalize_GMMs_start_time}")
 
     num_iters = 1000
     for i in range(num_iters):
         #Update GMM
 
-        update_GMMs_start_time = datetime.datetime.now()
         bgGMM, fgGMM = update_GMMs(img_float, mask, bgGMM, fgGMM)
-        update_GMMs_end_time = datetime.datetime.now()
-        print(f"update_GMMs {i} run time: \t\t{update_GMMs_end_time - update_GMMs_start_time}")
 
-        calculate_mincut_start_time = datetime.datetime.now()
         mincut_sets, energy = calculate_mincut(img_float, mask, bgGMM, fgGMM)
-        calculate_mincut_end_time = datetime.datetime.now()
-        print(f"calculate_mincut {i} run time: \t\t{calculate_mincut_end_time - calculate_mincut_start_time}")
 
-        update_mask_start_time = datetime.datetime.now()
         mask = update_mask(mincut_sets, mask)
-        update_mask_end_time = datetime.datetime.now()
-        print(f"update_mask {i} run time: \t\t{update_mask_end_time - update_mask_start_time}")
-
-        # plot mask with colorbar
-        import matplotlib.pyplot as plt
-        plt.figure()
-        plt.imshow(mask)
-        plt.colorbar()
-        plt.savefig(f'{i}.jpg')
 
         if check_convergence(energy):
             break
@@ -72,7 +53,7 @@ def grabcut(img, rect, n_iter=5, n_comp=5, k_blur=1):
     mask = finalize_mask(mask)
 
     # Return the final mask and the GMMs
-    return mask, bgGMM, fgGMM
+    return mask, bgGMM, fgGMM, i+1
 
 def finalize_mask(mask):
     mask[mask == GC_PR_BGD] = GC_BGD
@@ -140,91 +121,40 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
 
     return bgGMM, fgGMM
 
-def calc_beta(img):
-    rows, cols, _ = img.shape
-    _left_diff = img[:, 1:] - img[:, :-1]
-    _upleft_diff = img[1:, 1:] - img[:-1, :-1]
-    _up_diff = img[1:, :] - img[:-1, :]
-    _upright_diff = img[1:, :-1] - img[:-1, 1:]
+def calc_beta(diff_right, diff_bottom, diff_bottom_right, diff_top_right):
+    rows, cols, _ = diff_right.shape
 
-    sum_of_diffs = np.sum(np.square(_left_diff)) + np.sum(np.square(_upleft_diff)) + \
-        np.sum(np.square(_up_diff)) + \
-        np.sum(np.square(_upright_diff))
-    exp_of_diffs = sum_of_diffs / (4*cols*rows - 3*rows - 3*cols + 2 )
-    beta = 1 / (2 * exp_of_diffs)  # The first and last pixels in the 1st row are removed twice
-    return beta
+    sum_of_all_diffs = np.sum(np.square(diff_right)) + np.sum(np.square(diff_bottom)) + \
+        np.sum(np.square(diff_bottom_right)) + \
+        np.sum(np.square(diff_top_right))
     
-def calc_N_link_weights(pixel_ind1, pixel_ind2, pixel1_vals, pixel2_vals, beta):
-    dist = np.linalg.norm(pixel_ind1 - pixel_ind2)
-    norm = np.power(np.linalg.norm(pixel1_vals - pixel2_vals), 2)
-    return (50 * np.exp(-beta * norm)) / dist # TODO: Check if this is correct
-    
+    total_nof_elements = 4*cols*rows - 3*rows - 3*cols + 2
+    exp = sum_of_all_diffs / total_nof_elements
+    return 1 / (2 * exp)
+
 def calculate_n_links(img):
     rows, cols = img.shape[:2]
     indices = np.arange(rows * cols).reshape(rows, cols)
-    sum_weights_per_pix = np.zeros((rows, cols))
 
-    beta = calc_beta(img)
-
-    n_links = []
-    n_links_weights = []
-    max_weight = 0
-    for y in range(rows):
-        for x in range(cols):
-            if x < cols - 1:
-                # Right
-                weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y, x+1)), img[y, x], img[y, x+1], beta)
-                sum_weights_per_pix[y, x] += weight
-                sum_weights_per_pix[y, x+1] += weight
-                n_links.append((indices[y, x], indices[y, x+1]))
-                n_links_weights.append(weight)
-
-            if y < rows - 1:
-                # Bottom
-                weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y+1, x)), img[y, x], img[y+1, x], beta)
-                sum_weights_per_pix[y, x] += weight
-                sum_weights_per_pix[y+1, x] += weight
-                n_links.append((indices[y, x], indices[y+1, x]))
-                n_links_weights.append(weight)
-
-            if x < cols - 1 and y < rows - 1:
-                # Bottom-right
-                weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y+1, x+1)), img[y, x], img[y+1, x+1], beta)
-                sum_weights_per_pix[y, x] += weight
-                sum_weights_per_pix[y+1, x+1] += weight
-                n_links.append((indices[y, x], indices[y+1, x+1]))
-                n_links_weights.append(weight)
-
-            if x < cols - 1 and y > 0:
-                # Top-right
-                weight = calc_N_link_weights(np.asarray((y,x)), np.asarray((y-1, x+1)), img[y, x], img[y-1, x+1], beta)
-                sum_weights_per_pix[y, x] += weight
-                sum_weights_per_pix[y-1, x+1] += weight
-                n_links.append((indices[y, x], indices[y-1, x+1]))
-                n_links_weights.append(weight)
-
-    max_weight = np.max(sum_weights_per_pix)
-    return n_links, n_links_weights, max_weight
-
-# TODO: Fix index out of bound in: 
-# n_links_weights.append(weight_top_right[y, x])
-def calculate_n_links2(img):
-    rows, cols = img.shape[:2]
-    indices = np.arange(rows * cols).reshape(rows, cols)
-
-    beta = calc_beta(img)
+    # Initialize matrices
+    diff_right = np.zeros_like(img)
+    diff_bottom = np.zeros_like(img)
+    diff_bottom_right = np.zeros_like(img)
+    diff_top_right = np.zeros_like(img)
 
     # Calculate differences in pixel values
-    diff_right = img[:, :-1] - img[:, 1:]
-    diff_bottom = img[:-1, :] - img[1:, :]
-    diff_bottom_right = img[:-1, :-1] - img[1:, 1:]
-    diff_top_right = img[1:, :-1] - img[:-1, 1:]
+    diff_right[:,:-1]           = img[:, :-1]   - img[:, 1:]
+    diff_bottom[:-1, :]         = img[:-1, :]   - img[1:, :]
+    diff_bottom_right[:-1, :-1] = img[:-1, :-1] - img[1:, 1:]
+    diff_top_right[1:, :-1]     = img[1:, :-1]  - img[:-1, 1:]
 
     # Calculate norms of pixel value differences
     norm_right = np.linalg.norm(diff_right, axis=2)
     norm_bottom = np.linalg.norm(diff_bottom, axis=2)
     norm_bottom_right = np.linalg.norm(diff_bottom_right,axis=2)
     norm_top_right = np.linalg.norm(diff_top_right, axis=2)
+    
+    beta = calc_beta(diff_right, diff_bottom, diff_bottom_right, diff_top_right)
 
     # Calculate weights
     weight_right = (50 * np.exp(-beta * np.power(norm_right, 2))) / 1
@@ -234,10 +164,10 @@ def calculate_n_links2(img):
 
     # Update sum of weights per pixel
     sum_weights_per_pix = np.zeros((rows, cols))
-    sum_weights_per_pix[:, :-1] += weight_right
-    sum_weights_per_pix[:-1, :] += weight_bottom
-    sum_weights_per_pix[:-1, :-1] += weight_bottom_right
-    sum_weights_per_pix[1:, :-1] += weight_top_right
+    sum_weights_per_pix += 2 * weight_right         # multipy by 2 because we are adding the weight from the right and left
+    sum_weights_per_pix += 2 * weight_bottom        # multipy by 2 because we are adding the weight from the top and bottom
+    sum_weights_per_pix += 2 * weight_bottom_right  # multipy by 2 because we are adding the weight from the top-left and bottom-right
+    sum_weights_per_pix += 2 * weight_top_right     # multipy by 2 because we are adding the weight from the top-right and bottom-left
 
     # Extract n_links and n_links_weights
     n_links = []
@@ -315,26 +245,10 @@ def build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node):
     graph.add_vertices(rows * cols + 2)  # 2 extra vertices for source and sink
 
     if n_links is None or n_links_weights is None or K is None:
-        # NLINK_start_time = datetime.datetime.now()
-        # n_links2, n_links_weights2, K2 = calculate_n_links2(img)
-        # NLINK_end_time = datetime.datetime.now()
-        # print(f"NLINK2 run time:\t\t\t\t{NLINK_end_time - NLINK_start_time}")
-        
-        NLINK_start_time = datetime.datetime.now()
         n_links, n_links_weights, K = calculate_n_links(img)
-        NLINK_end_time = datetime.datetime.now()
-        print(f"NLINK run time:\t\t\t\t{NLINK_end_time - NLINK_start_time}")
-
-        # print(f"len1: {len(n_links)}, len2: {len(n_links2)}")
-        # print(f"np.min1: {np.min(n_links_weights)}, np.min2: {np.min(n_links_weights2)}")
-        # print(f"np.max1: {np.max(n_links_weights)}, np.max2: {np.max(n_links_weights2)}")
-        # print(f"np.mean1: {np.mean(n_links_weights)}, np.mean2: {np.mean(n_links_weights2)}")
 
     
-    TLINK_start_time = datetime.datetime.now()
     t_links, t_links_weights = calculate_t_links(img, mask, bgGMM, fgGMM, bg_node, fg_node, K)
-    TLINK_end_time = datetime.datetime.now()
-    print(f"TLINK run time: \t\t{TLINK_end_time - TLINK_start_time}")
 
     graph.add_edges(n_links + t_links, attributes={'weight': n_links_weights + t_links_weights})
     return graph
@@ -347,10 +261,7 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     
     # Find the minimum cut
 
-    st_mincut_start_time = datetime.datetime.now()
     cut = ig.Graph.st_mincut(graph, bg_node, fg_node, capacity='weight')
-    st_mincut_end_time = datetime.datetime.now()
-    print(f"st_mincut run time: \t\t{st_mincut_end_time - st_mincut_start_time}")
 
     # Get the min_cut
     min_cut = cut.partition
@@ -378,7 +289,7 @@ def update_mask(mincut_sets, mask):
 
 def check_convergence(energy):
     global prev_energy 
-    threshold = 2500
+    threshold = 0.0005
 
     # If prev_energy is None, set it to the current energy and return False
     if prev_energy is None:
@@ -386,11 +297,12 @@ def check_convergence(energy):
         return False
 
     delta = abs(energy - prev_energy)
+    normlized_delta = delta / energy
     
     # TODO: debug 
-    print(f"delta: {delta}")
+    print(f"delta: {normlized_delta}")
 
-    if (energy > prev_energy or delta < threshold):
+    if (energy > prev_energy or normlized_delta < threshold):
         return True
     
     prev_energy = energy
@@ -414,7 +326,7 @@ def cal_metric(predicted_mask, gt_mask):
 
 def parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_name', type=str, default='book', help='name of image from the course files')
+    parser.add_argument('--input_name', type=str, default='banana1', help='name of image from the course files')
     parser.add_argument('--eval', type=int, default=1, help='calculate the metrics')
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
@@ -446,7 +358,7 @@ if __name__ == '__main__':
 
     # Run the GrabCut algorithm on the image and bounding box
     start_time = datetime.datetime.now()
-    mask, bgGMM, fgGMM = grabcut(img, rect, k_blur=args.k_blur, n_comp=args.n_comp)
+    mask, bgGMM, fgGMM, nof_iters = grabcut(img, rect, k_blur=args.k_blur, n_comp=args.n_comp)
     mask = cv2.threshold(mask, 0, 1, cv2.THRESH_BINARY)[1]
     endtime = datetime.datetime.now()
 
@@ -472,6 +384,7 @@ if __name__ == '__main__':
             f.write(f"blur: {args.k_blur} \n")
             f.write(f"n_copm: {args.n_comp} \n")
             f.write(f"run_time: {run_time} \n")
+            f.write(f"nof_iters: {nof_iters} \n")            
 
     # end of TODO
     cv2.imshow('Original Image', img)

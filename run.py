@@ -9,11 +9,11 @@ def run_grabcut(path):
         for k_blur in [1, 5, 7, 11, 15]:
             for file_name in file_names:
                 print(f"Processing file: {file_name}, n_comp: {n_comp}, k_blur: {k_blur}")
-                os.makedirs(os.path.join('outputs', f'n_comp_{n_comp}_k_blur_{k_blur}', file_name.split('.')[0]), exist_ok=True)
+                os.makedirs(os.path.join('outputs2', f'n_comp_{n_comp}_k_blur_{k_blur}', file_name.split('.')[0]), exist_ok=True)
                 # Check if the file is a JPEG image
                 if file_name.endswith('.jpg') or file_name.endswith('.jpeg'):
                     # Construct the command string with the file name
-                    command = f"python grabcut.py --input_name {file_name.split('.')[0]} --n_comp {n_comp} --k_blur {k_blur} --out_path {os.path.join('outputs', f'n_comp_{n_comp}_k_blur_{k_blur}')}"
+                    command = f"python grabcut.py --input_name {file_name.split('.')[0]} --n_comp {n_comp} --k_blur {k_blur} --out_path {os.path.join('outputs2', f'n_comp_{n_comp}_k_blur_{k_blur}')}"
                     
                     # Execute the command
                     os.system(command)

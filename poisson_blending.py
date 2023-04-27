@@ -66,8 +66,6 @@ def poisson_blend(im_src, im_tgt, im_mask, center):
     # TODO: Implement Poisson blending of the source image onto the target ROI
     assert im_mask.shape[0] <= im_tgt.shape[0] and im_mask.shape[1] <= im_tgt.shape[1]
 
-    # im_src = cv2.cvtColor(im_src, cv2.COLOR_BGR2GRAY).reshape(im_src.shape[0], im_src.shape[1], 1)
-    # im_tgt = cv2.cvtColor(im_tgt, cv2.COLOR_BGR2GRAY).reshape(im_tgt.shape[0], im_tgt.shape[1], 1)
     im_tgt = im_tgt.astype(np.float64)
 
     im_src, im_mask = crop_src_image(im_src, im_mask)
@@ -112,8 +110,6 @@ def poisson_blend(im_src, im_tgt, im_mask, center):
 
         im_vec = spsolve(A, b)
         blend_out[ranges["tgt_min_y"]:ranges["tgt_max_y"], ranges["tgt_min_x"]:ranges["tgt_max_x"], channel] = im_vec.reshape((h_tgt, w_tgt))
-
-    # blend_out = blend_out.reshape((im_tgt.shape[0], im_tgt.shape[1]))
 
     return blend_out
 
