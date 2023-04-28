@@ -6,6 +6,8 @@ from sklearn.mixture import GaussianMixture
 import igraph as ig
 import datetime
 
+np.seterr(divide = 'ignore')
+
 GC_BGD = 0 # Hard bg pixel
 GC_FGD = 1 # Hard fg pixel, will not be used
 GC_PR_BGD = 2 # Soft bg pixel
@@ -103,6 +105,8 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     background_pixels_prediction = bgGMM.predict(background_pixels)
     for comp_index in range(n_components):
         comp_pixels = background_pixels[background_pixels_prediction==comp_index]
+        if comp_pixels.shape[0] == 0:
+            continue
         bgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
         bgGMM.covariances_[comp_index] = np.cov(comp_pixels.T) + np.eye(3) * (epsilon)
         bgGMM.weights_[comp_index] = comp_pixels.shape[0] / background_pixels.shape[0]
@@ -113,6 +117,8 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     foreground_pixels_prediction = fgGMM.predict(foreground_pixels)
     for comp_index in range(n_components):
         comp_pixels = foreground_pixels[foreground_pixels_prediction==comp_index]
+        if comp_pixels.shape[0] == 0:
+            continue
         fgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
         fgGMM.covariances_[comp_index] = np.cov(comp_pixels.T) + np.eye(3) * (epsilon)
         fgGMM.weights_[comp_index] = comp_pixels.shape[0] / foreground_pixels.shape[0]
@@ -297,11 +303,8 @@ def check_convergence(energy):
         return False
 
     delta = abs(energy - prev_energy)
-    normlized_delta = delta / energy
+    normlized_delta = delta / (energy + epsilon)
     
-    # TODO: debug 
-    print(f"delta: {normlized_delta}")
-
     if (energy > prev_energy or normlized_delta < threshold):
         return True
     
@@ -326,7 +329,7 @@ def cal_metric(predicted_mask, gt_mask):
 
 def parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_name', type=str, default='banana1', help='name of image from the course files')
+    parser.add_argument('--input_name', type=str, default='stone2', help='name of image from the course files')
     parser.add_argument('--eval', type=int, default=1, help='calculate the metrics')
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
