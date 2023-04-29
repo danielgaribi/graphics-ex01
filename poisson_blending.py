@@ -16,9 +16,9 @@ def create_laplacian(h, w, inside_vec):
     main_diag = (1 - inside_vec) -4 * inside_vec # 1 if outside and -4 if inside
 
     right_side_diag = np.ones(N-1) * inside_vec[:-1] # 0 if outside and 1 if inside
-    right_side_diag[np.arange(1,N)%w==0] = 0 # handel the end of the row
+    right_side_diag[np.arange(1,N)%w==0] = 0 # handle the end of the row
     left_side_diag = np.ones(N-1) * inside_vec[1:] # 0 if outside and 1 if inside
-    left_side_diag[np.arange(1,N)%w==0] = 0 # handel the end of the row
+    left_side_diag[np.arange(N-1)%w==0] = 0 # handle the end of the row
     up_diag = np.ones(N-w) * inside_vec[w:]
     down_diag = np.ones(N-w) * inside_vec[:-w]
     diagonals = [main_diag,left_side_diag,right_side_diag,down_diag, up_diag]
@@ -63,12 +63,12 @@ def get_border_mask(mask):
     return mask_border
 
 def poisson_blend(im_src, im_tgt, im_mask, center):
-    # TODO: Implement Poisson blending of the source image onto the target ROI
-    assert im_mask.shape[0] <= im_tgt.shape[0] and im_mask.shape[1] <= im_tgt.shape[1]
-
+    im_src = im_src.astype(np.float64)
     im_tgt = im_tgt.astype(np.float64)
 
     im_src, im_mask = crop_src_image(im_src, im_mask)
+
+    assert im_mask.shape[0] <= im_tgt.shape[0] and im_mask.shape[1] <= im_tgt.shape[1]
 
     mask = (im_mask > 0).astype(im_mask.dtype)
     mask_border = get_border_mask(mask)
@@ -82,7 +82,7 @@ def poisson_blend(im_src, im_tgt, im_mask, center):
     blend_out[:, ranges["tgt_max_x"]:, :] = im_tgt[:, ranges["tgt_max_x"]:, :]
     
     for channel in range(im_tgt.shape[2]):
-        src_lap = signal.convolve2d(im_src[:,:, channel], LAPLACIAN_FILTER, mode='same', boundary='symm')
+        src_lap = signal.convolve2d(im_src[:,:, channel], LAPLACIAN_FILTER, mode='same')
 
         # Set pixels from the source/target image that are inside the source overlap
         src_patch_in_tgt = im_tgt[ranges["tgt_min_y"]:ranges["tgt_max_y"], ranges["tgt_min_x"]:ranges["tgt_max_x"], channel]
@@ -117,8 +117,9 @@ def poisson_blend(im_src, im_tgt, im_mask, center):
 def parse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--src_path', type=str, default='./data/imgs/banana2.jpg', help='image file path')
-    parser.add_argument('--mask_path', type=str, default='./data/seg_GT/banana2.bmp', help='mask file path')
+    parser.add_argument('--mask_path', type=str, default='./our_masks/banana2.jpg', help='mask file path')
     parser.add_argument('--tgt_path', type=str, default='./data/bg/table.jpg', help='mask file path')
+    parser.add_argument('--out_path', type=str, default='im_blend.png', help='mask file path')
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -140,7 +141,7 @@ if __name__ == "__main__":
 
     im_clone = poisson_blend(im_src, im_tgt, im_mask, center)
 
-    cv2.imwrite('im_blend.png', im_clone)
+    cv2.imwrite(args.out_path, im_clone)
     # cv2.imshow('Cloned image', im_clone)
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()

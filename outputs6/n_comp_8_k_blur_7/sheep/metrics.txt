@@ -1,0 +1,7 @@
+input_name: sheep.jpg 
+Accuracy=99.5674074074074, Jaccard=92.22163026105488 
+rect: (171, 171, 309, 386) 
+blur: 7 
+n_copm: 8 
+run_time: 0:02:50.594553 
+nof_iters: 6 

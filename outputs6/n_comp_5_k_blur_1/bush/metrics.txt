@@ -1,0 +1,7 @@
+input_name: bush.jpg 
+Accuracy=95.10222222222222, Jaccard=73.54035775741326 
+rect: (115, 35, 360, 554) 
+blur: 1 
+n_copm: 5 
+run_time: 0:01:21.724559 
+nof_iters: 4 

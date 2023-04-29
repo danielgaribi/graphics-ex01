@@ -1,0 +1,7 @@
+input_name: fullmoon.jpg 
+Accuracy=99.64835164835165, Jaccard=94.48946515397083 
+rect: (150, 114, 271, 234) 
+blur: 1 
+n_copm: 5 
+run_time: 0:01:15.003854 
+nof_iters: 8 

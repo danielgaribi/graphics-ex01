@@ -1,0 +1,7 @@
+input_name: book.jpg 
+Accuracy=97.80305989583333, Jaccard=94.3746144998083 
+rect: (59, 24, 618, 459) 
+blur: 1 
+n_copm: 5 
+run_time: 0:01:01.405029 
+nof_iters: 5 

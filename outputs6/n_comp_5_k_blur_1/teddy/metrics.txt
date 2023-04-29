@@ -1,0 +1,7 @@
+input_name: teddy.jpg 
+Accuracy=99.2789652487791, Jaccard=96.6288881535407 
+rect: (47, 46, 246, 338) 
+blur: 1 
+n_copm: 5 
+run_time: 0:00:35.381452 
+nof_iters: 10 

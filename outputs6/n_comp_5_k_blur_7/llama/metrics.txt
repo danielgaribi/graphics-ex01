@@ -1,0 +1,7 @@
+input_name: llama.jpg 
+Accuracy=98.71218927822702, Jaccard=92.81526645951809 
+rect: (112, 106, 370, 371) 
+blur: 7 
+n_copm: 5 
+run_time: 0:01:02.988966 
+nof_iters: 5 

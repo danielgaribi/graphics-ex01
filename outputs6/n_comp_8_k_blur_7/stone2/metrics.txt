@@ -1,0 +1,7 @@
+input_name: stone2.jpg 
+Accuracy=99.37369791666667, Jaccard=97.47264439686315 
+rect: (175, 5, 525, 455) 
+blur: 7 
+n_copm: 8 
+run_time: 0:01:38.562386 
+nof_iters: 4 

@@ -1,0 +1,7 @@
+input_name: cross.jpg 
+Accuracy=60.14259259259259, Jaccard=41.82721414980107 
+rect: (1, 5, 450, 600) 
+blur: 1 
+n_copm: 5 
+run_time: 0:00:27.784710 
+nof_iters: 9 

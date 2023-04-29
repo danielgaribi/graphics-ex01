@@ -1,0 +1,7 @@
+input_name: banana2.jpg 
+Accuracy=98.0810546875, Jaccard=92.361318077566 
+rect: (21, 54, 601, 449) 
+blur: 7 
+n_copm: 5 
+run_time: 0:01:37.478288 
+nof_iters: 7 

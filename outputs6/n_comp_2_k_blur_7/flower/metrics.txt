@@ -1,0 +1,7 @@
+input_name: flower.jpg 
+Accuracy=99.58851851851853, Jaccard=97.91345828794651 
+rect: (137, 63, 468, 402) 
+blur: 7 
+n_copm: 2 
+run_time: 0:01:06.259208 
+nof_iters: 3 

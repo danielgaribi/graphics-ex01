@@ -1,0 +1,7 @@
+input_name: grave.jpg 
+Accuracy=98.62666666666667, Jaccard=88.59076923076923 
+rect: (163, 148, 343, 463) 
+blur: 7 
+n_copm: 2 
+run_time: 0:02:41.164368 
+nof_iters: 6 

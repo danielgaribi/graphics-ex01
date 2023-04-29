@@ -1,0 +1,7 @@
+input_name: memorial.jpg 
+Accuracy=97.82444444444445, Jaccard=88.32624508128303 
+rect: (73, 145, 340, 498) 
+blur: 7 
+n_copm: 5 
+run_time: 0:03:04.326963 
+nof_iters: 8 
