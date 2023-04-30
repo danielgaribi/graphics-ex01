@@ -117,9 +117,8 @@ def poisson_blend(im_src, im_tgt, im_mask, center):
 def parse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--src_path', type=str, default='./data/imgs/banana2.jpg', help='image file path')
-    parser.add_argument('--mask_path', type=str, default='./our_masks/banana2.jpg', help='mask file path')
+    parser.add_argument('--mask_path', type=str, default='./data/seg_GT/banana2.bmp', help='mask file path')
     parser.add_argument('--tgt_path', type=str, default='./data/bg/table.jpg', help='mask file path')
-    parser.add_argument('--out_path', type=str, default='im_blend.png', help='mask file path')
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -127,21 +126,17 @@ if __name__ == "__main__":
     args = parse()
 
     im_tgt = cv2.imread(args.tgt_path, cv2.IMREAD_COLOR)
-    # im_tgt = cv2.resize(im_tgt, (0,0), fx=0.125, fy=0.125)
     im_src = cv2.imread(args.src_path, cv2.IMREAD_COLOR)
-    # im_src = cv2.resize(im_src, (0,0), fx=0.125, fy=0.125)
     if args.mask_path == '':
         im_mask = np.full(im_src.shape, 255, dtype=np.uint8)
     else:
         im_mask = cv2.imread(args.mask_path, cv2.IMREAD_GRAYSCALE)
-        # im_mask = cv2.resize(im_mask, (0,0), fx=0.125, fy=0.125)
         im_mask = cv2.threshold(im_mask, 0, 255, cv2.THRESH_BINARY)[1]
 
     center = (int(im_tgt.shape[1] / 2), int(im_tgt.shape[0] / 2))
 
     im_clone = poisson_blend(im_src, im_tgt, im_mask, center)
 
-    cv2.imwrite(args.out_path, im_clone)
-    # cv2.imshow('Cloned image', im_clone)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+    cv2.imshow('Cloned image', im_clone)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()

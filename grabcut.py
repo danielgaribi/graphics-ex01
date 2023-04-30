@@ -21,7 +21,7 @@ K = None
 prev_energy = None
 
 # Define the GrabCut algorithm function
-def grabcut(img, rect, n_iter=5, n_comp=5, k_blur=1):
+def grabcut(img, rect, n_iter=5):
     # Assign initial labels to the pixels based on the bounding box
     mask = np.zeros(img.shape[:2], dtype=np.uint8)
     mask.fill(GC_BGD)
@@ -30,14 +30,13 @@ def grabcut(img, rect, n_iter=5, n_comp=5, k_blur=1):
     # Convert to absolute cordinates
     w -= x
     h -= y
-    img = cv2.blur(img, (k_blur, k_blur))
     img_float = img.astype(np.float64)
 
     #Initalize the inner square to Foreground
     mask[y:y+h, x:x+w] = GC_PR_FGD
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
 
-    bgGMM, fgGMM = initalize_GMMs(img_float, mask, n_components=n_comp)
+    bgGMM, fgGMM = initalize_GMMs(img_float, mask)
 
     num_iters = 1000
     for i in range(num_iters):
@@ -55,7 +54,7 @@ def grabcut(img, rect, n_iter=5, n_comp=5, k_blur=1):
     mask = finalize_mask(mask)
 
     # Return the final mask and the GMMs
-    return mask, bgGMM, fgGMM, i+1
+    return mask, bgGMM, fgGMM
 
 def finalize_mask(mask):
     mask[mask == GC_PR_BGD] = GC_BGD
@@ -105,6 +104,7 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     background_pixels_prediction = bgGMM.predict(background_pixels)
     for comp_index in range(n_components):
         comp_pixels = background_pixels[background_pixels_prediction==comp_index]
+        # In the case of empty components, do not update
         if comp_pixels.shape[0] == 0:
             continue
         bgGMM.means_[comp_index] = np.mean(comp_pixels, axis=0)
@@ -329,14 +329,11 @@ def cal_metric(predicted_mask, gt_mask):
 
 def parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_name', type=str, default='stone2', help='name of image from the course files')
+    parser.add_argument('--input_name', type=str, default='banana1', help='name of image from the course files')
     parser.add_argument('--eval', type=int, default=1, help='calculate the metrics')
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
     parser.add_argument('--rect', type=str, default='1,1,100,100', help='if you wish change the rect (x,y,w,h')
-    parser.add_argument('--out_path', type=str, default='outputs', help='')
-    parser.add_argument('--k_blur', type=int, default='1', help='')
-    parser.add_argument('--n_comp', type=int, default='5', help='')
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -354,16 +351,12 @@ if __name__ == '__main__':
     else:
         rect = tuple(map(int,args.rect.split(',')))
 
-    # TODO: debug 
-    print(f"img: {args.input_name}")
 
     img = cv2.imread(input_path)
 
     # Run the GrabCut algorithm on the image and bounding box
-    start_time = datetime.datetime.now()
-    mask, bgGMM, fgGMM, nof_iters = grabcut(img, rect, k_blur=args.k_blur, n_comp=args.n_comp)
+    mask, bgGMM, fgGMM = grabcut(img, rect)
     mask = cv2.threshold(mask, 0, 1, cv2.THRESH_BINARY)[1]
-    endtime = datetime.datetime.now()
 
     # Print metrics only if requested (valid only for course files)
     if args.eval:
@@ -374,22 +367,6 @@ if __name__ == '__main__':
 
     # Apply the final mask to the input image and display the results
     img_cut = img * (mask[:, :, np.newaxis])
-    # TODO: remove before submition:
-    cv2.imwrite(f'{args.out_path}/{args.input_name}/image.jpg', img)
-    cv2.imwrite(f'{args.out_path}/{args.input_name}/mask.jpg', 255 * mask)
-    cv2.imwrite(f'{args.out_path}/{args.input_name}/result.jpg', img_cut)
-    if args.eval:
-        with open(f'{args.out_path}/{args.input_name}/metrics.txt', 'w') as f:
-            run_time = endtime - start_time
-            f.write(f"input_name: {args.input_name}.jpg \n")
-            f.write(f'Accuracy={acc}, Jaccard={jac} \n')
-            f.write(f"rect: {rect} \n")
-            f.write(f"blur: {args.k_blur} \n")
-            f.write(f"n_copm: {args.n_comp} \n")
-            f.write(f"run_time: {run_time} \n")
-            f.write(f"nof_iters: {nof_iters} \n")            
-
-    # end of TODO
     cv2.imshow('Original Image', img)
     cv2.imshow('GrabCut Mask', 255 * mask)
     cv2.imshow('GrabCut Result', img_cut)
