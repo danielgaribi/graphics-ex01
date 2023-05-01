@@ -4,7 +4,6 @@ import argparse
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 import igraph as ig
-import datetime
 
 np.seterr(divide = 'ignore')
 
@@ -41,7 +40,6 @@ def grabcut(img, rect, n_iter=5):
     num_iters = 1000
     for i in range(num_iters):
         #Update GMM
-
         bgGMM, fgGMM = update_GMMs(img_float, mask, bgGMM, fgGMM)
 
         mincut_sets, energy = calculate_mincut(img_float, mask, bgGMM, fgGMM)
@@ -60,7 +58,6 @@ def finalize_mask(mask):
     mask[mask == GC_PR_BGD] = GC_BGD
     mask[mask == GC_PR_FGD] = GC_FGD
     return mask
-
 
 def initalize_GMMs(img, mask, n_components = 5):
     background_pixels = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
@@ -90,7 +87,6 @@ def initalize_GMMs(img, mask, n_components = 5):
     fgGMM.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(fgGMM.covariances_)).transpose((0, 2, 1))
 
     return bgGMM, fgGMM
-
 
 # Define helper functions for the GrabCut algorithm
 def update_GMMs(img, mask, bgGMM, fgGMM):
@@ -130,11 +126,12 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
 def calc_beta(diff_right, diff_bottom, diff_bottom_right, diff_top_right):
     rows, cols, _ = diff_right.shape
 
-    sum_of_all_diffs = np.sum(np.square(diff_right)) + np.sum(np.square(diff_bottom)) + \
-        np.sum(np.square(diff_bottom_right)) + \
-        np.sum(np.square(diff_top_right))
+    sum_of_all_diffs = np.sum(np.square(diff_right)) + \
+                       np.sum(np.square(diff_bottom)) + \
+                       np.sum(np.square(diff_bottom_right)) + \
+                       np.sum(np.square(diff_top_right))
     
-    total_nof_elements = 4*cols*rows - 3*rows - 3*cols + 2
+    total_nof_elements = 4 * cols * rows - 3 * rows - 3 * cols + 2
     exp = sum_of_all_diffs / total_nof_elements
     return 1 / (2 * exp)
 
@@ -199,7 +196,6 @@ def calculate_n_links(img):
     max_weight = np.max(sum_weights_per_pix)
 
     return n_links, n_links_weights, max_weight
-
 
 def calc_D_for_image(pixels, gmm):
     log_prob = np.zeros((pixels.shape[0], 1))
@@ -266,7 +262,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     graph = build_graph(img, mask, bgGMM, fgGMM, bg_node, fg_node)
     
     # Find the minimum cut
-
     cut = ig.Graph.st_mincut(graph, bg_node, fg_node, capacity='weight')
 
     # Get the min_cut
@@ -276,7 +271,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
 
     # Get the energy term corresponding to the cut
     energy = cut.value
-    
     return min_cut, energy
 
 def update_mask(mincut_sets, mask):
@@ -291,6 +285,7 @@ def update_mask(mincut_sets, mask):
     for fg_pixel_ind in foreground_pixels:
         if mask[fg_pixel_ind] != GC_BGD and mask[fg_pixel_ind] != GC_FGD:
             mask[fg_pixel_ind] = GC_PR_FGD
+    
     return mask
 
 def check_convergence(energy):
@@ -326,7 +321,6 @@ def cal_metric(predicted_mask, gt_mask):
 
     return accuracy, jaccard_similarity
 
-
 def parse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_name', type=str, default='banana1', help='name of image from the course files')
@@ -340,7 +334,6 @@ if __name__ == '__main__':
     # Load an example image and define a bounding box around the object of interest
     args = parse()
 
-
     if args.input_img_path == '':
         input_path = f'data/imgs/{args.input_name}.jpg'
     else:
@@ -350,7 +343,6 @@ if __name__ == '__main__':
         rect = tuple(map(int, open(f"data/bboxes/{args.input_name}.txt", "r").read().split(' ')))
     else:
         rect = tuple(map(int,args.rect.split(',')))
-
 
     img = cv2.imread(input_path)
 
